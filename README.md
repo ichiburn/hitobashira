@@ -71,7 +71,7 @@
 | `tools/common.py` / `tools/ingest_email.py` / `tools/report.py` | 共通処理 / メールメタデータの取り込みと分類 / 報告書・絵馬の生成 |
 | `examples/` | SAMPLE（ダミーデータ）の台帳・メール・生成例。`python3 examples/rebuild.py` で現行コードから再生成（`--check` で一致確認） |
 | `tests/` | unittest による再現テスト（`python3 -m unittest`、標準ライブラリのみ） |
-| `.github/workflows/test.yml` | CI（unittest を実行） |
+| `tests/` | unittest（`python3 -m unittest` で実行。CI設定は未導入） |
 | `requirements.txt` | 依存の注記（標準ライブラリのみ。絵馬 PNG だけ任意で Pillow） |
 | `testsite/` | 自作テストサイト（run1 用、1サイト） |
 | `testsite3/` | 自作テストサイト（run2 用、honest / gray / evil の3サイト） |
