@@ -2,6 +2,7 @@
 
 出力構成（runs_local/<run_id>/）:
   evidence/   生の証拠。書き込みは新規作成のみ（既存ファイルは上書きしない）で、書いたら読み取り専用にする
+  derived/    証拠から作った中間データ（台帳など。再生成できる）
   verdict/    判定（証拠とは別ファイル）
   log.jsonl   追記専用の実行ログ（許可判定・操作・証拠パス・判定時刻）
   manifest.json  evidence/ と verdict/ の SHA-256 一覧
@@ -39,6 +40,8 @@ class RunContext:
         self.verdict_dir = os.path.join(self.dir, "verdict")
         os.makedirs(self.evidence_dir)
         os.makedirs(self.verdict_dir)
+        self.derived_dir = os.path.join(self.dir, "derived")
+        os.makedirs(self.derived_dir)
         self.log_path = os.path.join(self.dir, "log.jsonl")
         self.log("run_start", run_id=self.run_id)
 
@@ -69,8 +72,22 @@ class RunContext:
         self.log("evidence_saved", path=self.rel(p), sha256=sha256_file(p), role=role)
         return p
 
+    def put_derived(self, name, data, role=None):
+        """証拠から作った中間データを derived/ に新規作成で書く。"""
+        if isinstance(data, (dict, list)):
+            data = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+        if isinstance(data, str):
+            data = data.encode("utf-8")
+        p = self._write_once(os.path.join(self.derived_dir, name), data)
+        self.log("derived_saved", path=self.rel(p), sha256=sha256_file(p), role=role)
+        return p
+
     def put_verdict(self, name, obj, role=None):
-        """判定を verdict/ に新規作成で書く（証拠とは別ファイル）。判定時刻を記録する。"""
+        """判定を verdict/ に新規作成で書く（証拠とは別ファイル）。判定時刻を記録する。obj が str なら Markdown などをそのまま書く。"""
+        if isinstance(obj, str):
+            p = self._write_once(os.path.join(self.verdict_dir, name), obj.encode("utf-8"))
+            self.log("verdict_saved", path=self.rel(p), sha256=sha256_file(p), role=role)
+            return p
         obj = dict(obj)
         obj.setdefault("decided_at", now_iso())
         data = (json.dumps(obj, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
@@ -80,7 +97,7 @@ class RunContext:
 
     def write_manifest(self):
         files = []
-        for sub in ("evidence", "verdict"):
+        for sub in ("evidence", "derived", "verdict"):
             for root, _, names in os.walk(os.path.join(self.dir, sub)):
                 for n in sorted(names):
                     p = os.path.join(root, n)
