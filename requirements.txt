@@ -1,3 +1,6 @@
 # 依存パッケージなし: tools/（取り込み・報告書 Markdown）、tests/、testsite/ は Python 3.10 以降の標準ライブラリのみで動く。
 # 任意: 絵馬 PNG を作る場合だけ Pillow と日本語フォントが必要（無ければ report.py は警告して PNG を省略する）。
 #   pip install pillow
+# 任意: テスト用ブラウザ（harness/）を使う場合だけ Playwright（python）。無ければブラウザのテストはスキップ、E2E は urllib で同じ許可判定をして動く。
+#   pip install playwright && python3 -m playwright install chromium
+# 任意: ローカル E2E（e2e/）には Mailpit のバイナリ（公式 GitHub Releases、MIT）が必要。無ければ E2E のテストはスキップ。

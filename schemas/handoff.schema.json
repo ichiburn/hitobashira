@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "hitobashira.handoff/v1",
+  "title": "人柱くん 役割間の引き継ぎファイル",
+  "description": "人柱Bot（調査）→ 観測Bot → 検証官 → 統括 の引き継ぎ。各ファイルは新規作成のみで上書きしない。prev_handoff_sha256 で前の引き継ぎファイルにつながる。検証は e2e/handoff.py の validate()（標準ライブラリのみ）で行う。",
+  "type": "object",
+  "required": ["schema", "run_id", "seq", "from_role", "to_role", "prev_state", "state", "created_at", "artifacts", "prev_handoff_sha256"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "hitobashira.handoff/v1"},
+    "run_id": {"type": "string", "minLength": 1},
+    "seq": {"type": "integer", "minimum": 0},
+    "from_role": {"enum": ["coordinator", "hitobashira", "observer", "verifier"]},
+    "to_role": {"enum": ["hitobashira", "observer", "verifier", "coordinator"]},
+    "prev_state": {"enum": [null, "CREATED", "SURVEYED", "OBSERVED", "VERIFIED"]},
+    "state": {"enum": ["CREATED", "SURVEYED", "OBSERVED", "VERIFIED", "REPORTED", "ABORTED"]},
+    "created_at": {"type": "string", "description": "ISO 8601（TZ付き）"},
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256"],
+        "additionalProperties": false,
+        "properties": {
+          "path": {"type": "string", "description": "run ディレクトリからの相対パス"},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "kind": {"enum": ["evidence", "derived", "verdict", "handoff"]}
+        }
+      }
+    },
+    "withheld": {"type": "array", "items": {"type": "string"}, "description": "受け手に意図的に渡さないファイル（検証官に前段の結論を見せない等）"},
+    "prev_handoff_sha256": {"type": ["string", "null"]},
+    "scope": {"type": "object", "description": "統括が固定した許可範囲（CREATED のときだけ）"},
+    "verify_lock": {
+      "type": "object",
+      "required": ["path", "sha256", "locked_at"],
+      "properties": {"path": {"type": "string"}, "sha256": {"type": "string"}, "locked_at": {"type": "string"}}
+    },
+    "reason": {"type": "string", "description": "ABORTED のときの理由（途中停止を隠さない）"},
+    "notes": {"type": "string"}
+  }
+}
