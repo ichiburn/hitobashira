@@ -1,0 +1,3 @@
+# 依存パッケージなし: tools/（取り込み・報告書 Markdown）、tests/、testsite/ は Python 3.10 以降の標準ライブラリのみで動く。
+# 任意: 絵馬 PNG を作る場合だけ Pillow と日本語フォントが必要（無ければ report.py は警告して PNG を省略する）。
+#   pip install pillow
