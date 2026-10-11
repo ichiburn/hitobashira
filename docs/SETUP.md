@@ -55,7 +55,8 @@ python3 report.py --ledger ../examples/sample_ledger.json --out /tmp/out
 # run1 用: 1サイト（ポート 8765）
 cd testsite && python3 server.py
 # run2 用: 3サイト（honest=8766 / gray=8767 / evil=8768）
-cd testsite3 && python3 server3.py honest & python3 server3.py gray & python3 server3.py evil &
+(cd testsite3 && python3 server3.py honest & python3 server3.py gray & python3 server3.py evil & wait)
+# または: cd testsite3; python3 server3.py honest & python3 server3.py gray & python3 server3.py evil &
 ```
 
 POST された内容はスクリプトと同じフォルダの `*_submissions.jsonl`（testsite は `submissions.jsonl`）に、アクセスログは `*_access.log` に書かれます。これらは `.gitignore` 済みで、公開しないでください。
