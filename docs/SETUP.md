@@ -136,3 +136,21 @@ python3 e2e/run_mail_e2e.py        # honest と evil を通しで実行（MAILPI
 - テスト: `python3 -m unittest tests.e2e.test_mail_e2e`（Mailpit が無ければスキップ）
 - `compose.yaml` で Mailpit とテストサイトをまとめて起動することもできる（**未検証**。Docker Desktop / WSL2 / Ubuntu いずれでも作成者は試していない）。`python3 e2e/run_mail_e2e.py --mailpit-api http://127.0.0.1:8025 --mailpit-smtp-port 1025` で既存の Mailpit を使う
 - Windows 11: WSL2（Ubuntu）の中で上の手順をそのまま実行するのを推奨。Docker Desktop を使う場合は WSL2 バックエンドで `docker compose up -d` し、E2E スクリプトも WSL2 内で実行する（未検証）。Windows ネイティブでは Mailpit の Windows 版バイナリを `--mailpit-bin` で指定する（未検証）
+
+## 9. 役割の引き継ぎと体験レポート（e2e/pipeline.py、issue #5）
+
+1つのコマンドで、統括 → 人柱Bot（調査・登録）→ 観測Bot（受信・配信停止・再観測）→ 検証官（独立判定）→ 統括（体験レポート）を通しで再現します。各役割はこのリポジトリのスクリプトが演じます。
+
+```bash
+python3 e2e/pipeline.py                       # DEMO の honest / evil を起動して通しで実行（Mailpit は 8. と同じく自動起動）
+# 起動済みのテストサイト（testsite_mail 互換）に URL を1回渡す場合:
+python3 e2e/pipeline.py --target http://127.0.0.1:8781/ --sender-domain honest-news.test \
+  --mailpit-api http://127.0.0.1:8025 --mailpit-smtp-port 1025
+```
+
+- 引き継ぎファイル: `handoff/NN_<from>_to_<to>.json`（スキーマ `schemas/handoff.schema.json`、検証は `e2e/handoff.py` の `validate()`）。新規作成のみで、`prev_handoff_sha256` で前の引き継ぎにつながる。受け手は `accept()` で宛先・ハッシュの連鎖・成果物のハッシュを確かめてから作業する
+- 状態の遷移: `CREATED`（統括が許可範囲を固定）→ `SURVEYED`（人柱Bot）→ `OBSERVED`（観測Bot）→ `VERIFIED`（検証官。`verify_lock` に判定の固定時刻と SHA-256）→ `REPORTED`（統括）。途中で失敗したら `ABORTED`（理由つき）を書いて止まり、隠さない
+- 検証官に渡すのは一次証拠（`evidence/`）と `task.json` だけ。観測Bot の結論・台帳・集計は `withheld` に書いて渡さない。検証官は一次証拠から台帳を作り直して判定を固定し、そのあとで観測Bot の結論を開いて `compare.json` に比較を書く
+- 体験レポート `verdict/report.md`: 約束と現実の差分、引き継ぎの時刻とハッシュ、実測の実行時間・受信数・問題検出数、実施していない工程、検証の条件と限界
+- 同じ機械・同じプロセスで動くので、**完全なブラインド検証ではない**。検証官が前段の結論を「受け取っていない」ことは示せるが、「読めなかった」ことまでは示せない
+- 出力例: `examples/e2e_sample/`

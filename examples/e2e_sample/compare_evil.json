@@ -1,0 +1,12 @@
+{
+  "role": "verifier",
+  "opened_observer_verdict_at": "2026-10-11T19:55:21.833+09:00",
+  "verify_locked_at": "2026-10-11T19:55:21.832+09:00",
+  "verify_sha256": "aa0311c33fac45dd13ce9f99bbc4212966c8fd9bd02d75f29d68fad4ed68db95",
+  "observer_status": "ineffective",
+  "verifier_status": "ineffective",
+  "agreement": "一致",
+  "observer_after": 1,
+  "verifier_after": 1,
+  "decided_at": "2026-10-11T19:55:21.833+09:00"
+}
