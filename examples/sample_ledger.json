@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "sample": true,
+  "_note": "SAMPLE: ダミーデータ。実在サービスの観測結果ではありません。",
+  "bot_address": "yourbot@example.com",
+  "services": [
+    {
+      "service": "SAMPLE 開運メルマガ（架空）",
+      "tag": "sample-kaiun",
+      "tag_address": "yourbot+sample-kaiun@example.com",
+      "signup_url": "https://example.com/sample-signup",
+      "signed_up_at": "2026-10-11T13:00:00+09:00",
+      "required_fields": [
+        "メールアドレス",
+        "名前（架空名: 人柱 太郎）"
+      ],
+      "prechecked_optins": [
+        "提携企業からのお得情報"
+      ],
+      "dark_patterns": [
+        "「無料プレゼント」を強調し配信頻度の記載なし",
+        "配信停止リンクが灰色の極小文字"
+      ],
+      "screenshots": [
+        "screenshots/sample_form.png"
+      ],
+      "emails": [
+        {
+          "received_at": "2026-10-11T13:01:12+09:00",
+          "from": "SAMPLE開運 <noreply@example.com>",
+          "subject": "【重要】ご登録ありがとうございます",
+          "to": "yourbot+sample-kaiun@example.com",
+          "type": "transactional",
+          "has_list_unsubscribe": false
+        },
+        {
+          "received_at": "2026-10-11T13:20:00+09:00",
+          "from": "SAMPLE開運 <info@example.com>",
+          "subject": "今だけ！開運ブレスレット30%OFFクーポン",
+          "to": "yourbot+sample-kaiun@example.com",
+          "type": "marketing",
+          "has_list_unsubscribe": true
+        },
+        {
+          "received_at": "2026-10-11T15:30:00+09:00",
+          "from": "SAMPLE開運 <info@example.com>",
+          "subject": "あなたの運気が急降下しています",
+          "to": "Bot <yourbot+sample-kaiun@example.com>",
+          "type": "marketing",
+          "has_list_unsubscribe": true
+        }
+      ],
+      "unsubscribed_at": "2026-10-11T14:00:00+09:00",
+      "emails_after_unsubscribe": 1
+    },
+    {
+      "service": "SAMPLE 無料ニュースレター（架空）",
+      "tag": "sample-news",
+      "tag_address": "yourbot+sample-news@example.com",
+      "signup_url": "https://example.com/sample-news",
+      "signed_up_at": null,
+      "required_fields": [],
+      "prechecked_optins": [],
+      "dark_patterns": [],
+      "screenshots": [],
+      "emails": [],
+      "unsubscribed_at": null,
+      "emails_after_unsubscribe": null
+    }
+  ]
+}

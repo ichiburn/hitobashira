@@ -1,0 +1,25 @@
+{
+  "url": "https://example.com/signup",
+  "mode": "view_only | test_site_submit",
+  "observation_started_at": "YYYY-MM-DDTHH:MM:SS+09:00",
+  "observation_finished_at": "YYYY-MM-DDTHH:MM:SS+09:00",
+  "preflight": {"robots_txt": {"observed": "", "decision": ""}, "terms": {"observed": "", "decision": ""}},
+  "dom_capture": {"file": "runs/<run>/dom.html", "method": ""},
+  "screenshots": ["runs/<run>/form.png"],
+  "observed_facts": {
+    "form": {"action": "", "method": ""},
+    "fields": [{"name": "", "label": "", "type": "", "required": true}],
+    "hidden_fields": [{"name": "", "value": ""}],
+    "checkboxes": [{"name": "", "label": "", "checked_initially": false}],
+    "buttons": [{"text": "", "type": ""}],
+    "consent_texts": ["（一字一句引用）"],
+    "promises": [{"topic": "配信頻度 | 料金 | 内容 | 配信停止の方法 | 第三者提供", "text": "", "status": "守った | 破った | 未確認 | 未実証"}]
+  },
+  "dark_pattern_candidates": [{"pattern": "", "evidence": "", "confidence": "高 | 中 | 低", "status": ""}],
+  "unverified": [],
+  "actions_taken": [],
+  "actions_not_taken": [],
+  "submitted": false,
+  "stopped_reason": "",
+  "overall": ""
+}

@@ -1,0 +1,11 @@
+# 送信記録・ログ・実行結果は公開しない
+*.jsonl
+*.log
+*.out
+/runs/
+/out/
+tools/out/
+ledger.json
+.answer_key*
+__pycache__/
+*.pyc

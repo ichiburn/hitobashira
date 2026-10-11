@@ -1,0 +1,15 @@
+<!doctype html>
+<!-- 注意: 自作の実験環境専用。所有する環境でのみ起動すること。実際の個人情報を入力しないこと。 --><html lang="ja"><head><meta charset="utf-8"><title>【DEMO・自作テスト環境】週刊おトク通信 無料登録</title>
+<style>body{font-family:sans-serif;max-width:640px;margin:30px auto;padding:0 16px}.big{font-size:28px;color:#c00;font-weight:bold}.tiny{font-size:10px;color:#bbb}.btn{background:#e60;color:#fff;font-size:20px;padding:12px 40px;border:0}.ghost{background:none;border:0;color:#ccc;font-size:11px}.banner{background:#222;color:#ff0;padding:6px;text-align:center}</style></head>
+<body><div class="banner">DEMO：これは人柱くん検証用に自作したテストサイトです（実在のサービスではありません）<br>自作の実験環境専用。所有する環境でのみ起動すること。実際の個人情報を入力しないこと。</div>
+<p class="big">完全無料！今だけ登録で豪華特典プレゼント</p>
+<p>配信は<b>週1回だけ</b>。いつでもワンクリックで解除できます。</p>
+<form method="POST" action="/submit">
+<p>お名前（必須）<br><input name="name" required></p>
+<p>メールアドレス（必須）<br><input name="email" type="email" required></p>
+<p>生年月日（必須）<br><input name="birthday" type="date" required></p>
+<p><label><input type="checkbox" name="partner_optin" checked> 提携企業からのお得な情報も受け取る</label></p>
+<p><label><input type="checkbox" name="daily_optin" checked> 毎日のタイムセール速報も受け取る</label></p>
+<p class="tiny">※ご登録いただいた情報は、当社グループ会社および提携先と共同で利用し、第三者へ提供することがあります。配信停止はマイページからログインのうえ手続きしてください。</p>
+<button class="btn" type="submit">無料で特典を受け取る</button><br><button class="ghost" type="button">特典はいりません</button>
+</form></body></html>
