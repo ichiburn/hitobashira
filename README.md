@@ -63,10 +63,10 @@
 | +タグ付きアドレスでの受信 | 実証済み（ローカルのみ） | ローカル Mailpit で +タグ宛てのメールを受信・仕分け（#4）。実際のメール受信基盤では未実証。※ Mailpit（127.0.0.1）を使ったローカルでの実証。Grok Bot のメール受信箱では +タグ宛てのメールが届かなかった（ハッカソン当日の観測）問題は未解決 |
 | 登録後のメール観測（受信数など） | 実証済み（ローカルのみ） | 自作 DEMO 2サイト × ローカル Mailpit、観測は数秒（#4）。実サイトでは未実証。頻度は測っていない |
 | 配信停止の確認 | 実証済み（ローカルのみ） | 自作 DEMO の honest は「観測期間内に検出せず」、evil は「効かず」と判定が分かれることを E2E とテストで確認（#4）。実サービスの配信停止は未実証。※ Mailpit（127.0.0.1）を使ったローカルでの実証。Grok Bot のメール受信箱では +タグ宛てのメールが届かなかった（ハッカソン当日の観測）問題は未解決 |
-| 役割の自動引き継ぎ（e2e/pipeline.py、#5） | 実証済み（ローカルのみ） | 1コマンドで 統括→人柱Bot→観測Bot→検証官→統括 をファイルの受け渡しで完走（honest / evil）。役割はスクリプトが演じ、同じ機械・同じプロセスなので完全なブラインド検証ではない |
+| 役割の自動引き継ぎ（e2e/pipeline.py、#5） | 実証済み（ローカルのみ） | 1コマンドで 統括→人柱Bot→観測Bot→検証官→統括 をファイルの受け渡しで完走（honest / evil）。起動済みのテストサイトに `--target` で URL を1回渡す形でも完走（別プロセスのサイト・compose のサイトの両方）。127.0.0.1 以外・許可リスト外の URL は通信前に拒否。役割はスクリプトが演じ、同じ機械・同じプロセスなので完全なブラインド検証ではない |
 | 体験レポートの生成（#5） | 実証済み（ローカルのみ） | 自作 DEMO 2サイトで生成（examples/e2e_sample/） |
-| compose.yaml での一括起動 | 未実証 | ファイルはあるが、Docker が無い環境のため動かしていない |
-| Windows 11 / WSL2 での実行 | 未実証 | 手順だけ docs/SETUP.md に記載。確認済みは Linux のみ |
+| compose.yaml での一括起動 | 実証済み（Linux のみ） | box（Debian 13、Docker 26.1.5 / Compose 2.26.1、dockerd を手動起動）で `docker compose up` し、`e2e/pipeline.py --target` と `e2e/run_mail_e2e.py` が honest / evil とも期待どおりの判定で完走（2026-10-11 21:39 JST）。公開は 127.0.0.1 のみ |
+| Windows 11 / WSL2 での実行 | 対象外（任意） | 対応環境は Linux。docs/SETUP.md の手順は参考・未検証 |
 | CI（GitHub Actions） | 未導入 | issue #1（対象外） |
 | Grok Bot 同士のメッセージでの引き継ぎ | 構想 | 下記「Bot 同士の引き継ぎ（構想）」。未実装 |
 | 課金の成立の確認 | 未実証 | テストサイトの完了画面に申込の文言を表示しただけで、実際の課金は発生させていない |
@@ -92,7 +92,7 @@
 | `testsite_mail/` | メール配信つきの自作テストサイト（honest / evil）。Mailpit の SMTP（127.0.0.1）へ送る |
 | `e2e/run_mail_e2e.py` / `e2e/pipeline.py` / `e2e/handoff.py` | Mailpit のローカル E2E / 役割の引き継ぎを通しで再現 / 引き継ぎファイルの検証 |
 | `schemas/handoff.schema.json` | 引き継ぎファイルの JSON Schema |
-| `compose.yaml` | Mailpit とテストサイトの一括起動（未検証） |
+| `compose.yaml` | Mailpit とテストサイトの一括起動（Linux で確認済み） |
 | `examples/e2e_sample/` | ローカル E2E の体験レポートと引き継ぎファイルの例（自作 DEMO） |
 | `examples/` | SAMPLE（ダミーデータ）の台帳・メール・生成例。`python3 examples/rebuild.py` で現行コードから再生成（`--check` で一致確認） |
 | `tests/` | unittest（`python3 -m unittest`。標準ライブラリのみで動き、Playwright・Mailpit が無いテストはスキップ。CI設定は未導入） |
@@ -100,7 +100,7 @@
 | `testsite/` | 自作テストサイト（run1 用、1サイト） |
 | `testsite3/` | 自作テストサイト（run2 用、honest / gray / evil の3サイト） |
 
-使い方は [docs/SETUP.md](docs/SETUP.md) を参照してください。
+使い方は [docs/SETUP.md](docs/SETUP.md) を参照してください。対応環境は Linux です（Windows / WSL2 は対象外（任意））。
 
 ## 評価結果（要約）
 

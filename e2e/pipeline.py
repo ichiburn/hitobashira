@@ -18,7 +18,8 @@
   verdict/compare.json           検証官: 固定後に観測Bot の結論と比較
   verdict/report.md              統括: 体験レポート（約束と現実の差分、検証の条件と限界）
   handoff/NN_*.json              引き継ぎ（schemas/handoff.schema.json）
-終了コード: 0=完走（期待どおり）/ 1=完走したが期待と違う / 2=途中停止（ABORTED）/ 3=Mailpit が無い
+終了コード: 0=完走（期待どおり）/ 1=完走したが期待と違う / 2=途中停止（ABORTED）/ 3=Mailpit が無い / 4=--target を拒否
+--target は http://127.0.0.1:<port>/ だけを受け付け（--allowed-ports を付ければそのポートだけ）、拒否するときは通信しない。
 """
 import argparse, json, os, re, secrets, sys, time, urllib.parse
 from datetime import datetime
@@ -324,8 +325,27 @@ def coordinator_report(ctx, chain, survey, verify, cmp_, obs, timings, mails_see
     return rp
 
 
+# ---------- 対象 URL の確認（ネットワークに出る前）----------
+def check_target(url, allowed_ports=None):
+    """--target を受け付けるか判定する。戻り値 (ok, reason)。通信はしない。
+    http・ホスト文字列 127.0.0.1・明示したポートだけ。allowed_ports を渡したら、その中のポートだけ。"""
+    try:
+        u = urllib.parse.urlsplit(str(url))
+        port = u.port
+    except ValueError:
+        return False, "URL を解釈できない"
+    if u.scheme != "http" or u.hostname != "127.0.0.1" or not port:
+        return False, "対象は http://127.0.0.1:<port>/ の自作テスト環境だけ（実在の外部 URL は受け付けない）"
+    if allowed_ports is not None and port not in set(allowed_ports):
+        return False, f"ポート {port} は許可リスト（--allowed-ports）にない"
+    return EgressPolicy([port]).decide(url, "GET")
+
+
 # ---------- 通し ----------
 def run_pipeline(target, sender_domain, mailpit, out_dir, use_browser=True, closed_env=True, observe_seconds=2.0):
+    ok, why = check_target(target)
+    if not ok:
+        raise ValueError(f"対象 URL を拒否: {why}")
     ctx = RunContext(out_dir)
     chain = Chain(ctx)
     tag = secrets.token_hex(5)
@@ -358,6 +378,9 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--target", default=None, help="起動済みのテストサイト（http://127.0.0.1:<port>/）。省略時は DEMO を起動")
     ap.add_argument("--sender-domain", default=None)
+    ap.add_argument("--allowed-ports", default=None, help="--target に使ってよいポート（カンマ区切り）。指定時はこれ以外を拒否")
+    ap.add_argument("--expect", choices=["effective", "ineffective", "pending"], default=None,
+                    help="--target のときの期待する判定（違えば終了コード 1）")
     ap.add_argument("--sites", default="honest,evil")
     ap.add_argument("--out", default=os.path.join(ROOT, "runs_local"))
     ap.add_argument("--mailpit-bin", default=None)
@@ -367,6 +390,12 @@ def main(argv=None):
     ap.add_argument("--observe-seconds", type=float, default=2.0)
     a = ap.parse_args(argv)
     use_browser = (not a.no_browser) and have_playwright()
+    if a.target:
+        ports = [int(x) for x in a.allowed_ports.split(",") if x.strip()] if a.allowed_ports else None
+        ok, why = check_target(a.target, ports)
+        if not ok:
+            print(f"[error] --target を拒否しました: {why}", file=sys.stderr)
+            return 4
     if a.mailpit_api:
         mp = ExternalMailpit(a.mailpit_api, a.mailpit_smtp_port)
     else:
@@ -378,7 +407,9 @@ def main(argv=None):
     results = []
     try:
         if a.target:
-            results.append(run_pipeline(a.target, a.sender_domain, mp, a.out, use_browser, True, a.observe_seconds))
+            r = run_pipeline(a.target, a.sender_domain, mp, a.out, use_browser, True, a.observe_seconds)
+            r["expected"] = a.expect
+            results.append(r)
         else:
             for mode in [s for s in a.sites.split(",") if s]:
                 httpd, site = server_mail.serve(mode, 0, "127.0.0.1", mp.smtp_port)

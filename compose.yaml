@@ -1,30 +1,44 @@
 # 自作の実験環境専用。所有する環境でのみ起動すること。実際の個人情報を入力しないこと。
 # Mailpit とメール配信つきテストサイト（honest / evil）をまとめて起動する。ポートはすべてホストの 127.0.0.1 にだけ公開する。
-# 注意: この compose.yaml は作成者の環境では未検証（Docker が無いため）。検証済みの手順は `python3 e2e/run_mail_e2e.py`（Mailpit バイナリを直接起動）。
-#   docker compose up -d
-#   python3 e2e/run_mail_e2e.py --mailpit-api http://127.0.0.1:8025 --mailpit-smtp-port 1025
-#   （E2E スクリプトはテストサイトを自分で起動する。下の honest / evil は手で画面を見るためのもの）
+#
+#   sudo docker compose up -d
+#   python3 e2e/pipeline.py --target http://127.0.0.1:8781/ --sender-domain honest-news.test \
+#       --mailpit-api http://127.0.0.1:8025 --mailpit-smtp-port 1025 --allowed-ports 8781,8782 --expect effective
+#   python3 e2e/pipeline.py --target http://127.0.0.1:8782/ --sender-domain otoku-sokuho.test \
+#       --mailpit-api http://127.0.0.1:8025 --mailpit-smtp-port 1025 --allowed-ports 8781,8782 --expect ineffective
+#   sudo docker compose down
+#
+# 構成の要点:
+# - テストサイトは mailpit と同じネットワーク名前空間で動かす（network_mode: service:mailpit）。テストサイトから Mailpit への
+#   SMTP は名前空間の中の 127.0.0.1:1025 で届き、コンテナ間のブリッジ転送を使わない
+#   （ホストの FORWARD が DROP の環境でも動く。2026-10-11 の box で確認）
+# - ホスト側の公開は 127.0.0.1 だけ（下の ports）。Docker のポート公開はコンテナの IP 宛てに転送するので、
+#   コンテナの名前空間の中では 0.0.0.0 で待ち受ける必要がある（中で 127.0.0.1 に絞ると公開ポートから届かない）。
+#   その名前空間へはホストと同じ機械の中のブリッジ（172.x）からしか届かず、外部には公開されない
+# - メール内のリンク（List-Unsubscribe）はホストの 127.0.0.1 を指す（--public-base）
 services:
   mailpit:
     image: axllent/mailpit:v1.31.5
-    command: ["--disable-version-check", "--smtp-disable-rdns", "--block-remote-css-and-fonts"]
+    command: ["--disable-version-check", "--smtp-disable-rdns", "--block-remote-css-and-fonts",
+              "--tags-disable", "plus-addresses,x-tags"]
     ports:
-      - "127.0.0.1:8025:8025"
-      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"   # Mailpit の API / UI
+      - "127.0.0.1:1025:1025"   # SMTP（E2E のカナリア送信用）
+      - "127.0.0.1:8781:8781"   # honest（network_mode: service:mailpit のため、ここで公開する）
+      - "127.0.0.1:8782:8782"   # evil
   honest:
     image: python:3.13-slim
+    network_mode: "service:mailpit"
     working_dir: /app
     volumes: ["./testsite_mail:/app:ro"]
-    # コンテナの中では 0.0.0.0 で待ち受ける（ホストへは 127.0.0.1 にだけ公開）。メール内リンクは 127.0.0.1 を指す
     command: ["python3", "server_mail.py", "--mode", "honest", "--port", "8781", "--bind", "0.0.0.0",
-              "--smtp-host", "mailpit", "--allow-smtp-host", "mailpit", "--public-base", "http://127.0.0.1:8781"]
-    ports: ["127.0.0.1:8781:8781"]
+              "--smtp-host", "127.0.0.1", "--smtp-port", "1025", "--public-base", "http://127.0.0.1:8781"]
     depends_on: [mailpit]
   evil:
     image: python:3.13-slim
+    network_mode: "service:mailpit"
     working_dir: /app
     volumes: ["./testsite_mail:/app:ro"]
     command: ["python3", "server_mail.py", "--mode", "evil", "--port", "8782", "--bind", "0.0.0.0",
-              "--smtp-host", "mailpit", "--allow-smtp-host", "mailpit", "--public-base", "http://127.0.0.1:8782"]
-    ports: ["127.0.0.1:8782:8782"]
+              "--smtp-host", "127.0.0.1", "--smtp-port", "1025", "--public-base", "http://127.0.0.1:8782"]
     depends_on: [mailpit]

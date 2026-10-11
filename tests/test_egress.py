@@ -77,11 +77,24 @@ class TestRunContext(unittest.TestCase):
 
 
 class TestDocsEgress(unittest.TestCase):
-    def test_setup_has_windows_wsl2(self):
-        s = open(os.path.join(_helpers.ROOT, "docs", "SETUP.md"), encoding="utf-8").read()
-        self.assertIn("WSL2", s)
-        self.assertIn("Windows", s)
+    def test_setup_marks_windows_wsl2_out_of_scope(self):
+        # 2026-10-11 21時台の判断: 対応は Linux。Windows / WSL2 は対象外（任意）で、手順は参考・未検証として残す
+        with open(os.path.join(_helpers.ROOT, "docs", "SETUP.md"), encoding="utf-8") as f:
+            s = f.read()
         self.assertIn("harness", s)
+        self.assertIn("対象外（任意）", s)
+        self.assertIn("参考・未検証", s)
+        with open(os.path.join(_helpers.ROOT, "README.md"), encoding="utf-8") as f:
+            self.assertIn("| Windows 11 / WSL2 での実行 | 対象外（任意） |", f.read())
+
+    def test_compose_publishes_only_loopback(self):
+        import re
+        with open(os.path.join(_helpers.ROOT, "compose.yaml"), encoding="utf-8") as f:
+            y = f.read()
+        ports = re.findall(r'^\s*-\s*"([^"]+)"', y, re.M)
+        self.assertTrue(ports)
+        for p in ports:
+            self.assertTrue(p.startswith("127.0.0.1:"), p)
 
 
 if __name__ == "__main__":

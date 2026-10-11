@@ -1,5 +1,7 @@
 # 導入手順
 
+> **対応環境は Linux です**（2026-10-11 に Debian 13・Python 3.13 で確認）。Windows 11 / WSL2 は**対象外（任意）**で、下に残した手順は参考・未検証です。
+
 ## 必要なもの
 
 - Python 3.10 以降（取り込み・報告書 Markdown・テストは標準ライブラリのみ。`requirements.txt` 参照）
@@ -96,14 +98,16 @@ python3 -m playwright install chromium     # 既に Google Chrome があれば�
 python3 -m unittest -v tests.test_egress tests.test_harness_browser
 ```
 
-### Windows 11 / WSL2 での実行
+- 既知の癖: 遮断で失敗したページを同じページで再度 goto すると Playwright が応答しなくなることがあった（Chrome 154 / Playwright 1.63）。遮断後はページを閉じて新しいページを使う
+
+### 参考: Windows 11 / WSL2（対象外（任意）・参考・未検証）
+
+以下は参考として残している手順で、作成者は動かしていません。対応環境は Linux だけです。
 
 - **WSL2（Ubuntu）での実行を推奨**します。上の Linux の手順がそのまま使えます。`python3 -m playwright install --with-deps chromium` でブラウザと依存ライブラリを入れてください（sudo を求められます）
 - テストサイト・Mailpit・ブラウザは**すべて WSL2 の中で**動かしてください。WSL2 の 127.0.0.1 と Windows 側の 127.0.0.1 は別のネットワークです（localhost 転送の設定によっては Windows から見えることがありますが、ハーネスは WSL2 内の 127.0.0.1 だけを許可します）
 - `.wslconfig` の `networkingMode=mirrored` を使っている場合も、待受アドレスは 127.0.0.1 のままにし、`0.0.0.0` に変えないでください
 - Windows ネイティブ（PowerShell）の場合: `py -m venv .venv; .venv\Scripts\Activate.ps1; pip install playwright; python -m playwright install chromium; python -m unittest -v`。Mailpit は Windows 版のバイナリ（公式 GitHub Releases）を使い、`--listen 127.0.0.1:<port> --smtp 127.0.0.1:<port>` で起動してください
-- 既知の癖: 遮断で失敗したページを同じページで再度 goto すると Playwright が応答しなくなることがあった（Chrome 154 / Playwright 1.63）。遮断後はページを閉じて新しいページを使う
-- Windows / WSL2 上での実行は、このリポジトリの作成者は**未確認**です（確認済みは Linux のみ）
 
 ## 8. Mailpit でのローカル E2E（e2e/、issue #4）
 
@@ -136,8 +140,27 @@ python3 e2e/run_mail_e2e.py        # honest と evil を通しで実行（MAILPI
 - 観測期間は数秒で、時間経過の代わりに配信トリガーを叩いている。実サービスでの配信停止の実証ではない
 - Playwright があればブラウザ（harness/）で操作し、無ければ urllib で同じ許可判定をしてから送る（`--no-browser`）
 - テスト: `python3 -m unittest tests.e2e.test_mail_e2e`（Mailpit が無ければスキップ）
-- `compose.yaml` で Mailpit とテストサイトをまとめて起動することもできる（**未検証**。Docker Desktop / WSL2 / Ubuntu いずれでも作成者は試していない）。`python3 e2e/run_mail_e2e.py --mailpit-api http://127.0.0.1:8025 --mailpit-smtp-port 1025` で既存の Mailpit を使う
-- Windows 11: WSL2（Ubuntu）の中で上の手順をそのまま実行するのを推奨。Docker Desktop を使う場合は WSL2 バックエンドで `docker compose up -d` し、E2E スクリプトも WSL2 内で実行する（未検証）。Windows ネイティブでは Mailpit の Windows 版バイナリを `--mailpit-bin` で指定する（未検証）
+- 参考（対象外・未検証）: Windows 11 では WSL2（Ubuntu）の中で上の手順を実行する想定。Docker Desktop（WSL2 バックエンド）や Windows ネイティブの Mailpit バイナリでの実行は試していない
+
+### compose.yaml で Mailpit とテストサイトを起動する（Linux で確認済み）
+
+2026-10-11 21:39 JST に box（Debian 13、Docker 26.1.5 / Compose 2.26.1）で、下の手順で honest / evil とも最後まで動き、期待どおりの判定になりました。
+
+```bash
+sudo apt-get install -y docker.io docker-compose   # Debian のパッケージ（公式 apt リポジトリの docker-ce でもよい）
+sudo dockerd > /tmp/dockerd.log 2>&1 &              # systemd が無い環境（コンテナの中など）の場合だけ
+sudo docker compose up -d                           # Mailpit・honest・evil。ホストの 127.0.0.1:8025/1025/8781/8782 にだけ公開
+python3 e2e/pipeline.py --target http://127.0.0.1:8781/ --sender-domain honest-news.test \
+  --mailpit-api http://127.0.0.1:8025 --mailpit-smtp-port 1025 --allowed-ports 8781,8782 --expect effective
+python3 e2e/pipeline.py --target http://127.0.0.1:8782/ --sender-domain otoku-sokuho.test \
+  --mailpit-api http://127.0.0.1:8025 --mailpit-smtp-port 1025 --allowed-ports 8781,8782 --expect ineffective
+python3 e2e/run_mail_e2e.py --mailpit-api http://127.0.0.1:8025 --mailpit-smtp-port 1025   # Mailpit だけ compose のものを使う
+sudo docker compose down
+```
+
+- テストサイトは Mailpit と同じネットワーク名前空間（`network_mode: service:mailpit`）で動かし、SMTP は名前空間の中の 127.0.0.1:1025 に送る。最初の版（サービス名 `mailpit` 宛て、コンテナ間のブリッジ経由）は、box の iptables（legacy）の FORWARD が既定 DROP だったため SMTP がタイムアウトして動かなかった
+- ホスト側の公開はすべて `127.0.0.1:XXXX:YYYY`。Docker のポート公開はコンテナの IP に転送するため、コンテナの名前空間の中では 0.0.0.0 で待ち受ける（中で 127.0.0.1 に絞ると公開ポートから届かない）。その名前空間には同じ機械のブリッジからしか届かない
+- storage driver は vfs になった（この環境では overlay2 がマウントできない）。イメージの取得と展開に時間とディスクを使う
 
 ## 9. 役割の引き継ぎと体験レポート（e2e/pipeline.py、issue #5）
 
@@ -154,5 +177,6 @@ python3 e2e/pipeline.py --target http://127.0.0.1:8781/ --sender-domain honest-n
 - 状態の遷移: `CREATED`（統括が許可範囲を固定）→ `SURVEYED`（人柱Bot）→ `OBSERVED`（観測Bot）→ `VERIFIED`（検証官。`verify_lock` に判定の固定時刻と SHA-256）→ `REPORTED`（統括）。途中で失敗したら `ABORTED`（理由つき）を書いて止まり、隠さない
 - 検証官に渡すのは一次証拠（`evidence/`）と `task.json` だけ。観測Bot の結論・台帳・集計は `withheld` に書いて渡さない。検証官は一次証拠から台帳を作り直して判定を固定し、そのあとで観測Bot の結論を開いて `compare.json` に比較を書く
 - 体験レポート `verdict/report.md`: 約束と現実の差分、引き継ぎの時刻とハッシュ、実測の実行時間・受信数・問題検出数、実施していない工程、検証の条件と限界
+- `--target` に渡せるのは `http://127.0.0.1:<port>/` だけ。`--allowed-ports` を付けるとそのポートだけを受け付ける。それ以外（実在の外部 URL、`localhost`、https、許可リスト外のポートなど）は、通信する前に終了コード 4 で拒否する
 - 同じ機械・同じプロセスで動くので、**完全なブラインド検証ではない**。検証官が前段の結論を「受け取っていない」ことは示せるが、「読めなかった」ことまでは示せない
 - 出力例: `examples/e2e_sample/`

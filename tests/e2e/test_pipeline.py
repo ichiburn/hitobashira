@@ -150,3 +150,76 @@ class TestPipelineE2E(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTargetCheck(unittest.TestCase):
+    """--target の受け付け判定（通信しない）。実在の外部 URL は渡さず、判定だけを確かめる。"""
+
+    def test_rejects_outside_allowlist(self):
+        from e2e import pipeline
+        for u in ("https://example.com/", "http://example.com:8781/", "http://localhost:8781/", "http://[::1]:8781/",
+                  "https://127.0.0.1:8781/", "http://127.0.0.1/", "http://127.0.0.2:8781/", "file:///etc/passwd"):
+            with self.subTest(u=u):
+                self.assertFalse(pipeline.check_target(u)[0])
+        self.assertFalse(pipeline.check_target("http://127.0.0.1:8783/", [8781, 8782])[0])
+        self.assertTrue(pipeline.check_target("http://127.0.0.1:8781/", [8781, 8782])[0])
+
+    def test_cli_rejects_before_any_network(self):
+        import contextlib, io
+        from e2e import pipeline
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            rc = pipeline.main(["--target", "https://example.com/", "--mailpit-bin", "/nonexistent", "--no-browser"])
+        self.assertEqual(rc, 4)
+        self.assertIn("拒否", err.getvalue())
+        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+            rc = pipeline.main(["--target", "http://127.0.0.1:8783/", "--allowed-ports", "8781,8782",
+                                "--mailpit-bin", "/nonexistent", "--no-browser"])
+        self.assertEqual(rc, 4)
+
+    def test_run_pipeline_rejects_external(self):
+        from e2e import pipeline
+        with self.assertRaises(ValueError):
+            pipeline.run_pipeline("https://example.com/", "x.test", None, tempfile.mkdtemp())
+
+
+@unittest.skipUnless(BIN, "Mailpit のバイナリが無い（MAILPIT_BIN / PATH / /tmp/mailpit）")
+class TestTargetCLI(unittest.TestCase):
+    """起動済みのテストサイト（別プロセス）に URL を1回渡すだけで最後まで動く（honest / evil）。"""
+
+    def test_target_honest_and_evil(self):
+        import contextlib, io, socket, subprocess, time
+        from e2e import pipeline
+        mp = E.MailpitProcess(BIN)
+        procs, ports = [], {}
+        try:
+            for mode in ("honest", "evil"):
+                ports[mode] = E.free_port()
+                procs.append(subprocess.Popen([sys.executable, os.path.join(_helpers.ROOT, "testsite_mail", "server_mail.py"),
+                                               "--mode", mode, "--port", str(ports[mode]), "--smtp-port", str(mp.smtp_port)],
+                                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+            for p in ports.values():
+                for _ in range(50):
+                    try:
+                        socket.create_connection(("127.0.0.1", p), 0.2).close()
+                        break
+                    except OSError:
+                        time.sleep(0.1)
+            out = tempfile.mkdtemp()
+            for mode, want in (("honest", "effective"), ("evil", "ineffective")):
+                import server_mail
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+                    rc = pipeline.main(["--target", f"http://127.0.0.1:{ports[mode]}/",
+                                        "--sender-domain", server_mail.SITES[mode]["domain"],
+                                        "--mailpit-api", mp.api, "--mailpit-smtp-port", str(mp.smtp_port),
+                                        "--allowed-ports", ",".join(str(x) for x in ports.values()),
+                                        "--expect", want, "--out", out, "--no-browser", "--observe-seconds", "1"])
+                r = json.loads(buf.getvalue())[0]
+                with self.subTest(mode=mode):
+                    self.assertEqual(rc, 0, r)
+                    self.assertEqual((r["state"], r["status"], r["agreement"]), ("REPORTED", want, "一致"))
+        finally:
+            for p in procs:
+                p.terminate(); p.wait(5)
+            mp.stop()
