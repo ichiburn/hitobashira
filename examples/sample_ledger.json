@@ -36,7 +36,25 @@
           "type": "transactional",
           "has_list_unsubscribe": false,
           "lu_source": "header",
-          "attribution": "verified"
+          "attribution": "domain_only",
+          "provenance": {
+            "source": "input_json",
+            "ref": null,
+            "fetched_at": null,
+            "ingested_at": "2026-10-11T16:30:00+09:00",
+            "received_at_source": "input_json.received_at",
+            "auth": {
+              "status": "none",
+              "trusted": false,
+              "authserv_id": null,
+              "spf": null,
+              "dkim": null,
+              "dmarc": null,
+              "basis": "Authentication-Results ヘッダなし"
+            },
+            "attribution_basis": "差出人ドメインは一致。信頼できる認証結果なし（Authentication-Results ヘッダなし）",
+            "type_basis": "subject_keyword_estimate"
+          }
         },
         {
           "received_at": "2026-10-11T13:20:00+09:00",
@@ -46,7 +64,25 @@
           "type": "marketing",
           "has_list_unsubscribe": true,
           "lu_source": "header",
-          "attribution": "verified"
+          "attribution": "domain_only",
+          "provenance": {
+            "source": "input_json",
+            "ref": null,
+            "fetched_at": null,
+            "ingested_at": "2026-10-11T16:30:00+09:00",
+            "received_at_source": "input_json.received_at",
+            "auth": {
+              "status": "none",
+              "trusted": false,
+              "authserv_id": null,
+              "spf": null,
+              "dkim": null,
+              "dmarc": null,
+              "basis": "Authentication-Results ヘッダなし"
+            },
+            "attribution_basis": "差出人ドメインは一致。信頼できる認証結果なし（Authentication-Results ヘッダなし）",
+            "type_basis": "subject_keyword_estimate"
+          }
         },
         {
           "received_at": "2026-10-11T15:30:00+09:00",
@@ -56,7 +92,25 @@
           "type": "marketing",
           "has_list_unsubscribe": true,
           "lu_source": "header",
-          "attribution": "verified"
+          "attribution": "domain_only",
+          "provenance": {
+            "source": "input_json",
+            "ref": null,
+            "fetched_at": null,
+            "ingested_at": "2026-10-11T16:30:00+09:00",
+            "received_at_source": "input_json.received_at",
+            "auth": {
+              "status": "none",
+              "trusted": false,
+              "authserv_id": null,
+              "spf": null,
+              "dkim": null,
+              "dmarc": null,
+              "basis": "Authentication-Results ヘッダなし"
+            },
+            "attribution_basis": "差出人ドメインは一致。信頼できる認証結果なし（Authentication-Results ヘッダなし）",
+            "type_basis": "subject_keyword_estimate"
+          }
         },
         {
           "received_at": "Sun, 11 Oct 2026 06:45:00 +0000",
@@ -66,13 +120,32 @@
           "type": "marketing",
           "has_list_unsubscribe": true,
           "lu_source": "header",
-          "attribution": "verified",
+          "attribution": "domain_only",
+          "provenance": {
+            "source": "input_json",
+            "ref": null,
+            "fetched_at": null,
+            "ingested_at": "2026-10-11T16:30:00+09:00",
+            "received_at_source": "input_json.received_at",
+            "auth": {
+              "status": "none",
+              "trusted": false,
+              "authserv_id": null,
+              "spf": null,
+              "dkim": null,
+              "dmarc": null,
+              "basis": "Authentication-Results ヘッダなし"
+            },
+            "attribution_basis": "差出人ドメインは一致。信頼できる認証結果なし（Authentication-Results ヘッダなし）",
+            "type_basis": "subject_keyword_estimate"
+          },
           "message_id": "<sample-m4@example.com>",
           "unsubscribe_url": "https://example.com/u?token=SAMPLE-DUMMY"
         }
       ],
       "unsubscribed_at": "2026-10-11T14:00:00+09:00",
-      "emails_after_unsubscribe": 2,
+      "emails_after_unsubscribe": null,
+      "evidence_policy": "strict",
       "unsubscribe_url": "https://example.com/u?token=SAMPLE-DUMMY"
     },
     {
