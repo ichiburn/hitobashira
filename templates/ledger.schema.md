@@ -17,7 +17,7 @@
       "prechecked_optins": [],                        // 最初からチェック済みのオプトイン
       "dark_patterns": ["解約リンクが極小"],           // 観測したダークパターン（自由記述）
       "screenshots": ["screenshots/servicea_form.png"],
-      "evidence_policy": "strict",                    // ingest が付ける。strict では受信経路の稼働確認が無いと「検出せず」と言わない
+      "evidence_policy": "strict",                    // ingest が付ける（記録用）。値が無い台帳も strict として扱い、受信経路の稼働確認が無いと「検出せず」と言わない
       "receiver_checks": [                            // 任意: 受信経路の稼働確認（アダプタが記録）。停止前と observed_until 以降の両方に ok が必要
         {"at": "2026-10-11T13:00:00+09:00", "kind": "canary", "ok": true}
       ],
@@ -35,7 +35,7 @@
           "lu_source": "header",                        // header | body_link（ヘッダが取れず本文のリンク有無で代替）| null
           "attribution": "domain_only",                 // trusted（ドメイン一致＋信頼できる認証結果 pass、または自己所有の閉じた環境）
                                                         // | domain_only（ドメイン一致のみ。From は偽装できる）| unverified（不一致・認証 fail）
-                                                        // | unchecked（照合先なし）| verified（旧形式。新しい ingest は書かない）
+                                                        // | unchecked（照合先なし）| verified（旧形式。信用しない＝数えない。報告書は「旧形式のため未確認」。新しい ingest は書かない）
           "provenance": {                               // 証拠ごとの出所（ingest が付ける）
             "source": "input_json",                     // input_json（任意入力）| mailpit_api など受信基盤のアダプタ
             "ref": null, "fetched_at": null, "ingested_at": "2026-10-11T13:07:00+09:00",
@@ -68,9 +68,9 @@
 - `unsubscribed_at` が無い → 未観測。日付だけ（例 `2026-10-11`）・TZ不明・解釈不能 → **判定保留**（その日の終わりとはみなさない）。
 - `observed_until` が無い、または停止時刻以前 → 判定保留。
 - 受信時刻が不明なメールが1通でもある → 判定保留。
-- 数えるのは帰属が `trusted`（と旧形式の `verified`）のメールだけ。`domain_only` / `unchecked` / `unverified` は「効かず」の確定根拠にしない。停止後の販促がそれだけなら判定保留。
+- 数えるのは帰属が `trusted` のメールだけ。`domain_only` / `unchecked` / `unverified` / 旧形式の `verified` は「効かず」の確定根拠にしない。停止後の販促がそれだけなら判定保留。
 - 停止後に分類 `other`・想定外のメールがある → 判定保留（0通と断定しない）。
-- 停止後の販促を検出しなかった場合の表現は「観測期間内に検出せず」（`effective`）。恒久的な停止成功ではない。`evidence_policy: strict` では `receiver_checks` で停止前と観測期限後の受信経路の稼働を確認できなければ判定保留。
+- 停止後の販促を検出しなかった場合の表現は「観測期間内に検出せず」（`effective`）。恒久的な停止成功ではない。`evidence_policy` の有無にかかわらず、`receiver_checks` で停止前と観測期限後の受信経路の稼働を確認できなければ判定保留。
 
 ## Authentication-Results の扱い（tools/auth_results.py）
 

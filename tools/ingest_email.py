@@ -19,7 +19,7 @@
     受信基盤から直接取り出した Authentication-Results（信頼リストの authserv-id、一番上のヘッダ）が pass の場合か、
     自己所有の閉じたローカル環境だとアダプタ（tools/mail_adapters.py）が保証した場合だけ。
   - この CLI に渡す JSON は任意入力なので、中の Authentication-Results は解釈して記録するが信用しない。
-  - 取り込んだサービス枠には evidence_policy="strict" を付ける（受信経路の稼働確認が無ければ「検出せず」と言わない）。
+  - 取り込んだサービス枠には evidence_policy="strict" を付ける（記録用。判定は値が無い台帳も strict として扱い、受信経路の稼働確認が無ければ「検出せず」と言わない）。
 
 使い方:
   python3 ingest_email.py mail.json [--ledger ledger.json] [--create-ledger]

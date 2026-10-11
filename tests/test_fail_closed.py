@@ -22,6 +22,10 @@ def mail(t="2026-10-11T15:00:00+09:00", typ="marketing", attribution="trusted", 
     return e
 
 
+RC = [{"at": "2026-10-11T13:59:00+09:00", "kind": "canary", "ok": True},
+      {"at": "2026-10-12T13:00:05+09:00", "kind": "canary", "ok": True}]
+
+
 def msg(ar=None, frm="Shop <news@shop.example>", subject="今だけクーポン", t="2026-10-11T15:00:00+09:00", **kw):
     m = {"to": "yourbot+k7q2x@example.com", "from": frm, "subject": subject, "received_at": t}
     if ar is not None:
@@ -122,8 +126,11 @@ class TestVerdictFailClosed(unittest.TestCase):
         self.assertEqual(common.unsub_verdict(L["services"][0])["status"], "ineffective")
 
     def test_unsub_notice_tz_missing_unobserved(self):
+        # 仕様変更: evidence_policy が無い台帳も strict 扱い。稼働確認があれば停止完了通知だけで effective、無ければ保留
         self.assertEqual(common.unsub_verdict(svc(emails=[mail(typ="transactional", subject="配信停止を受け付けました")],
-                                                  evidence_policy=None))["status"], "effective")
+                                                  receiver_checks=RC))["status"], "effective")
+        self.assertEqual(common.unsub_verdict(svc(emails=[mail(typ="transactional", subject="配信停止を受け付けました")],
+                                                  evidence_policy=None))["status"], "pending")
         for bad in ("2026-10-11T15:00:00", None, "Sun, 11 Oct 2026 06:00:00 -0000"):
             with self.subTest(bad=bad):
                 self.assertEqual(common.unsub_verdict(svc(emails=[mail(bad)]))["status"], "pending")
@@ -135,12 +142,26 @@ class TestVerdictFailClosed(unittest.TestCase):
         self.assertEqual(v["status"], "pending")
 
     def test_zero_wording_is_not_permanent_success(self):
-        v = common.unsub_verdict(svc())
+        v = common.unsub_verdict(svc(receiver_checks=RC))
         self.assertEqual(v["status"], "effective")
         self.assertIn("検出せず", v["reason"])
-        m = report.metrics(svc())
+        m = report.metrics(svc(receiver_checks=RC))
         self.assertIn("検出せず", m["verdict"])
         self.assertNotIn("効いた", m["verdict"])
+
+    def test_legacy_verified_not_trusted(self):  # 旧形式の verified は「効かず」の根拠にしない（判定保留）
+        v = common.unsub_verdict(svc(emails=[mail(attribution="verified")]))
+        self.assertEqual((v["status"], v["after"]), ("pending", None))
+        self.assertIn("旧形式のため未確認", v["reason"])
+        s = svc(emails=[mail(attribution="verified")])
+        md = report.render_md(s, report.metrics(s), False, "G")
+        self.assertIn("旧形式のため未確認", md)
+
+    def test_no_policy_ledger_is_strict(self):  # evidence_policy が無くても strict
+        s = svc()
+        self.assertNotIn("evidence_policy", s)
+        self.assertEqual(common.unsub_verdict(s)["status"], "pending")
+        self.assertIn("receiver_checks", common.unsub_verdict(s)["reason"])
 
     def test_strict_needs_receiver_checks(self):
         s = svc(evidence_policy="strict")
@@ -174,6 +195,15 @@ class TestReadmeLimits(unittest.TestCase):
         self.assertIn("Authentication-Results", r)
         self.assertIn("ヘッダの解釈だけ", r)
         self.assertIn("実際の受信メールでは未検証", r)
+
+    def test_plus_tag_note_in_readme_and_setup(self):  # ローカル（Mailpit）実証であり、Grok Bot 受信箱の +タグ問題は未解決
+        for p in ("README.md", os.path.join("docs", "SETUP.md")):
+            with open(os.path.join(ROOT, p), encoding="utf-8") as f:
+                t = f.read()
+            with self.subTest(p=p):
+                self.assertIn("Mailpit（127.0.0.1）", t)
+                self.assertIn("ハッカソン当日の観測", t)
+                self.assertIn("未解決", t)
 
 
 if __name__ == "__main__":

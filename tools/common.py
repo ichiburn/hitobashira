@@ -80,8 +80,8 @@ def check_attribution(svc, from_field):
 #   domain_only … 差出人ドメインは一致したが、信頼できる認証結果がない（From は偽装できるので確定根拠にしない）
 #   unverified  … 差出人ドメイン不一致、差出人不明、または信頼できる認証結果が fail
 #   unchecked   … 照合先（expected_sender_domains）が無い
-#   verified    … 旧形式（#2 以前の ingest が書いた値）。互換のため残す。新しい ingest は書かない
-COUNTED_ATTRIBUTIONS = ("trusted", "verified")
+#   verified    … 旧形式（#2 以前の ingest が書いた値）。認証結果の記録が無いので信用しない（数えない＝判定保留）。新しい ingest は書かない
+COUNTED_ATTRIBUTIONS = ("trusted",)
 
 
 def attribute(svc, from_field, auth=None, closed_env=False):
@@ -229,11 +229,11 @@ def unsub_verdict(svc):
     - unsubscribed_at が日付だけ・TZ不明・解釈不能 → pending（日付だけの場合は「その日の終わり」とはみなさない）
     - observed_until が無い、または停止時刻以前 → pending（停止後を観測していない）
     - 受信時刻が不明（欠損・TZ不明・解釈不能）なメールが1通でもある → pending
-    - 停止後の販促メールは帰属が trusted（旧形式 verified を含む）のものだけ数える。
-      domain_only / unchecked / unverified は「効かず」の確定根拠にしない（それだけなら pending）
+    - 停止後の販促メールは帰属が trusted のものだけ数える。
+      domain_only / unchecked / unverified / 旧形式の verified は「効かず」の確定根拠にしない（それだけなら pending）
     - 停止後に分類 other・不明のメールがある場合、0通とは断定しない（pending）
     - effective は「観測期間内に停止後の販促メールを検出せず」の意味で、恒久的な停止成功を示さない。
-      evidence_policy=strict の台帳では、受信経路の稼働確認（receiver_checks）が無ければ pending
+      どの台帳も strict として扱い（evidence_policy の有無にかかわらず）、受信経路の稼働確認（receiver_checks）が無ければ pending
     """
     u_raw = svc.get("unsubscribed_at")
     u, ust = parse_dt_ex(u_raw)
@@ -257,21 +257,21 @@ def unsub_verdict(svc):
     promo_after = [e for e in after if e.get("type") == "marketing"]
     counted = [e for e in promo_after if e.get("attribution") in COUNTED_ATTRIBUTIONS]
     excluded = len(promo_after) - len(counted)
-    legacy = sum(1 for e in counted if e.get("attribution") == "verified")
+    legacy = sum(1 for e in promo_after if e.get("attribution") == "verified")
+    legacy_note = f"（うち旧形式の帰属 verified {legacy}通は、旧形式のため未確認）" if legacy else ""
     if counted:
         return {"status": "ineffective", "after": len(counted), "reason": f"停止後に販促メール{len(counted)}通"
-                + (f"（帰属を確定できない{excluded}通は除外）" if excluded else "")
-                + (f"（うち{legacy}通は旧形式の帰属 verified: 認証結果の記録なし）" if legacy else "")}
+                + (f"（帰属を確定できない{excluded}通は除外）" if excluded else "") + legacy_note}
     if excluded:
         return {"status": "pending", "after": None,
-                "reason": f"停止後の販促メールは帰属を確定できない{excluded}通のみ（domain_only / unchecked / unverified）"}
+                "reason": f"停止後の販促メールは帰属を確定できない{excluded}通のみ（domain_only / unchecked / unverified / 旧形式 verified）"
+                          + legacy_note}
     unclear = [e for e in after if e.get("type") not in ("marketing", "transactional")]
     if unclear:
         return {"status": "pending", "after": None, "reason": f"停止後に分類が other・不明のメールが{len(unclear)}通ある"}
-    if svc.get("evidence_policy") == "strict":
-        ok, why = receiver_ok(svc)
-        if not ok:
-            return {"status": "pending", "after": None, "reason": why}
+    ok, why = receiver_ok(svc)   # evidence_policy が無い旧形式の台帳も strict として扱う
+    if not ok:
+        return {"status": "pending", "after": None, "reason": why}
     return {"status": "effective", "after": 0,
             "reason": f"{fmt_jst(svc.get('observed_until'))} までの観測期間内に、停止後の販促メールを検出せず"
                       "（恒久的な停止成功を示すものではない）"}

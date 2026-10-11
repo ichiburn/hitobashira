@@ -13,7 +13,7 @@ from common import (NA, PENDING, UNKNOWN_TYPES, JST, LedgerError, load_ledger, f
                     tag_of, emails_of, md_cell, oneline, url_domain, warn)
 
 ZERO = "なし（0件）"
-ATTR_LABEL = {"trusted": "認証済み", "verified": "ドメイン一致（旧形式）", "domain_only": "ドメイン一致のみ（認証なし）",
+ATTR_LABEL = {"trusted": "認証済み", "verified": "旧形式のため未確認", "domain_only": "ドメイン一致のみ（認証なし）",
               "unverified": "未確認", "unchecked": "照合なし"}
 
 

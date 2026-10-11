@@ -22,6 +22,12 @@ def mail(t, typ="marketing", **kw):
     return e
 
 
+# 2026-10-11 21時台の仕様変更（fail-closed の例外をなくした）で、「検出せず」には受信経路の稼働確認が
+# 停止前と観測期限後の両方で必要になった。evidence_policy の無い台帳も strict 扱い。
+RC = [{"at": "2026-10-11T13:59:00+09:00", "kind": "canary", "ok": True},
+      {"at": "2026-10-12T13:00:05+09:00", "kind": "canary", "ok": True}]
+
+
 def quiet(fn, *a, **kw):
     with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
         return fn(*a, **kw)
@@ -37,16 +43,26 @@ class TestUnsubVerdict(unittest.TestCase):
         v = common.unsub_verdict(svc(observed_until="2026-10-11T13:30:00+09:00"))
         self.assertEqual(v["status"], "pending")
 
-    def test_effective_needs_observed_until(self):
-        self.assertEqual(common.unsub_verdict(svc())["status"], "effective")
+    def test_effective_needs_observed_until_and_receiver_checks(self):
+        # 仕様変更: 以前は observed_until だけで effective。evidence_policy の無い台帳も strict として扱うようにしたため、
+        # 受信経路の稼働確認（receiver_checks）が無ければ判定保留、あれば effective（観測期間内に検出せず）。
+        self.assertEqual(common.unsub_verdict(svc())["status"], "pending")
+        self.assertEqual(common.unsub_verdict(svc(receiver_checks=RC))["status"], "effective")
 
     def test_unsub_confirmation_mail_does_not_count(self):  # 停止完了通知1通で「効かず」になっていた
-        s = svc(emails=[mail("2026-10-11T14:01:00+09:00", "transactional", subject="配信停止を受け付けました")])
+        # 仕様変更: effective には受信経路の稼働確認が必要になったため receiver_checks を付けた（確かめたい点は同じ）
+        s = svc(emails=[mail("2026-10-11T14:01:00+09:00", "transactional", subject="配信停止を受け付けました")],
+                receiver_checks=RC)
         v = common.unsub_verdict(s)
         self.assertEqual((v["status"], v["after"]), ("effective", 0))
 
-    def test_promo_after_unsub_is_ineffective(self):
+    def test_promo_after_unsub_legacy_verified_is_pending_trusted_is_ineffective(self):
+        # 仕様変更: 旧形式の attribution "verified"（差出人ドメイン一致のみ・認証結果の記録なし）は信用しない。
+        # 以前は ineffective だったが、いまは判定保留。認証済み（trusted）なら ineffective。
         v = common.unsub_verdict(svc(emails=[mail("2026-10-11T15:00:00+09:00")]))
+        self.assertEqual((v["status"], v["after"]), ("pending", None))
+        self.assertIn("旧形式のため未確認", v["reason"])
+        v = common.unsub_verdict(svc(emails=[mail("2026-10-11T15:00:00+09:00", attribution="trusted")]))
         self.assertEqual((v["status"], v["after"]), ("ineffective", 1))
 
     def test_missing_received_at_is_pending(self):  # 欠損を黙って除外→「効いた」になっていた
