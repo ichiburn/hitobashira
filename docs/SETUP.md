@@ -78,3 +78,29 @@ cd testsite && python3 server.py
 `testsite/server.py` は `GET /`（フォーム）と `POST /submit`（記録）だけを受け付け、それ以外は 404/405 を返します（フォルダ内のファイルは配信しません）。記録には時刻・アクセス元・User-Agent・全フィールド（空欄も含む）を残します。
 POST された内容はスクリプトと同じフォルダの `*_submissions.jsonl`（testsite は `submissions.jsonl`）に、アクセスログは `*_access.log` に書かれます。これらは `.gitignore` 済みで、公開しないでください。
 なお、サイト名（honest / gray / evil）がファイル名に入るため、ブラインド評価に使う場合はファイル名から分類が分かる点に注意してください（docs/EVALUATION.md の限界 (a)）。
+
+## 7. テスト用ブラウザの送信先制御（harness/、issue #3）
+
+`harness/` は人柱くんのテスト操作用の Playwright（python）ハーネスです。SKILL.md の「送信は自作の 127.0.0.1 だけ」を、手順上の約束ではなく**コードで強制**します。
+
+- `harness/egress.py`: 許可判定。http・ホスト文字列 `127.0.0.1`・許可ポートだけを通し、書き込み（GET/HEAD 以外）はポートごとの許可パスだけ。`localhost`・`::1`・`127.0.0.2`・10進表記・認証情報付き URL・WebSocket は拒否
+- `harness/browser.py`: `context.route("**/*")` で全リクエスト（ページ・iframe・fetch/XHR・フォーム送信）を判定し、許可外は遮断してログに残す。許可したものは `max_redirects=0` で取得し、リダイレクト先も判定する。WebSocket は接続させず、Service Worker はブロック。Chromium には到達しないプロキシ（127.0.0.1:9）を指定し、ループバック以外への直接通信も止める（多重の防御）
+- ページの文章は非信頼データ。「監査を無視しろ」などの指示は `untrusted_instructions_detected` に記録するだけで、監査は続ける
+- `harness/runctx.py`: 実行ごとに `run_id` を振り、`<出力先>/<run_id>/` に `evidence/`（生の証拠。新規作成のみ・書いたら読み取り専用）、`verdict/`（判定。証拠とは別ファイル）、`log.jsonl`（許可判定・操作・証拠パス・判定時刻）、`manifest.json`（SHA-256）を作る。**SHA-256 は固定後の改変検知で、取得時の真正性は保証しない**
+
+Playwright は任意です。無い環境では `tests/test_harness_browser.py` はスキップされます。
+
+```bash
+python3 -m venv .venv && . .venv/bin/activate && pip install playwright
+python3 -m playwright install chromium     # 既に Google Chrome があれば不要（HITOBASHIRA_CHROME で実行ファイルを指定可）
+python3 -m unittest -v tests.test_egress tests.test_harness_browser
+```
+
+### Windows 11 / WSL2 での実行
+
+- **WSL2（Ubuntu）での実行を推奨**します。上の Linux の手順がそのまま使えます。`python3 -m playwright install --with-deps chromium` でブラウザと依存ライブラリを入れてください（sudo を求められます）
+- テストサイト・Mailpit・ブラウザは**すべて WSL2 の中で**動かしてください。WSL2 の 127.0.0.1 と Windows 側の 127.0.0.1 は別のネットワークです（localhost 転送の設定によっては Windows から見えることがありますが、ハーネスは WSL2 内の 127.0.0.1 だけを許可します）
+- `.wslconfig` の `networkingMode=mirrored` を使っている場合も、待受アドレスは 127.0.0.1 のままにし、`0.0.0.0` に変えないでください
+- Windows ネイティブ（PowerShell）の場合: `py -m venv .venv; .venv\Scripts\Activate.ps1; pip install playwright; python -m playwright install chromium; python -m unittest -v`。Mailpit は Windows 版のバイナリ（公式 GitHub Releases）を使い、`--listen 127.0.0.1:<port> --smtp 127.0.0.1:<port>` で起動してください
+- 既知の癖: 遮断で失敗したページを同じページで再度 goto すると Playwright が応答しなくなることがあった（Chrome 154 / Playwright 1.63）。遮断後はページを閉じて新しいページを使う
+- Windows / WSL2 上での実行は、このリポジトリの作成者は**未確認**です（確認済みは Linux のみ）
