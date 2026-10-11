@@ -104,3 +104,35 @@ python3 -m unittest -v tests.test_egress tests.test_harness_browser
 - Windows ネイティブ（PowerShell）の場合: `py -m venv .venv; .venv\Scripts\Activate.ps1; pip install playwright; python -m playwright install chromium; python -m unittest -v`。Mailpit は Windows 版のバイナリ（公式 GitHub Releases）を使い、`--listen 127.0.0.1:<port> --smtp 127.0.0.1:<port>` で起動してください
 - 既知の癖: 遮断で失敗したページを同じページで再度 goto すると Playwright が応答しなくなることがあった（Chrome 154 / Playwright 1.63）。遮断後はページを閉じて新しいページを使う
 - Windows / WSL2 上での実行は、このリポジトリの作成者は**未確認**です（確認済みは Linux のみ）
+
+## 8. Mailpit でのローカル E2E（e2e/、issue #4）
+
+> **注意: 自作の実験環境専用。所有する環境でのみ起動すること。実際の個人情報を入力しないこと。** Mailpit は本物の配信サービスの代わりではなく、再現用のローカル受信箱です。
+
+`testsite_mail/server_mail.py` は、登録時に Mailpit の SMTP（127.0.0.1）へ確認メール（手続き）と販促メールを送る DEMO サイトです。`honest`（配信停止が効く）と `evil`（停止完了と言いながら販促を送り続ける）の2つのモードがあります。
+
+1本のスクリプトで、各サイトについて次を無人で実行します。
+
+```bash
+# Mailpit のバイナリ（公式 GitHub Releases の linux-amd64）を用意する。例:
+curl -sSL -o /tmp/mailpit.tar.gz https://github.com/axllent/mailpit/releases/latest/download/mailpit-linux-amd64.tar.gz
+sha256sum /tmp/mailpit.tar.gz      # リリースページの digest と照合する
+tar -xzf /tmp/mailpit.tar.gz -C /tmp mailpit
+python3 e2e/run_mail_e2e.py        # honest と evil を通しで実行（MAILPIT_BIN / --mailpit-bin でも指定可）
+```
+
+| 段階 | 内容 | 証跡（`runs_local/<run_id>/`） |
+|---|---|---|
+| 登録 | フォームの事前同意状態（チェックの初期値）を保存してから、初期状態のまま送信 | `evidence/01_consent_state.json`, `01_signup_form.*`, `01_register_response.html` |
+| 受信 | Mailpit の API からヘッダとメタデータだけを取得（本文・`Received` は保存しない）。カナリアで受信経路を確認 | `evidence/02_mailpit_before_unsub.json`, `log.jsonl`（receiver_check） |
+| ingest | `ingest_email.ingest()` に Mailpit アダプタの provenance を付けて取り込み | `derived/03_ledger_after_ingest.json` |
+| 配信停止 | List-Unsubscribe の URL を（許可判定を通してから）開き、停止ボタンを押す | `evidence/04_unsubscribe_page.html`, `04_unsubscribe_response.html` |
+| 再観測 | 配信トリガー（`/_test/campaign`）→ 数秒待つ → `observed_until` → カナリアで受信経路を確認 → 取り直して ingest | `evidence/05_campaign_trigger.json`, `05_mailpit_after_unsub.json`, `derived/06_ledger_final.json`, `derived/unsub_observation.json` |
+| 判定 | `unsub_verdict()` と報告書（証拠とは別ファイル） | `verdict/07_unsub_verdict.json`, `verdict/07_report.md`, `manifest.json` |
+
+- 帰属: Mailpit は認証ヘッダを付けないため、このE2Eでは「自分で起動した Mailpit に自分で起動したテストサイトだけが送る」ことを根拠に `trusted` にしている（`closed_env`）。`--no-closed-env-trust` を付けると帰属は `domain_only` になり、evil でも「判定保留」になる（認証不明のとき断定しないことの確認）
+- 観測期間は数秒で、時間経過の代わりに配信トリガーを叩いている。実サービスでの配信停止の実証ではない
+- Playwright があればブラウザ（harness/）で操作し、無ければ urllib で同じ許可判定をしてから送る（`--no-browser`）
+- テスト: `python3 -m unittest tests.e2e.test_mail_e2e`（Mailpit が無ければスキップ）
+- `compose.yaml` で Mailpit とテストサイトをまとめて起動することもできる（**未検証**。Docker Desktop / WSL2 / Ubuntu いずれでも作成者は試していない）。`python3 e2e/run_mail_e2e.py --mailpit-api http://127.0.0.1:8025 --mailpit-smtp-port 1025` で既存の Mailpit を使う
+- Windows 11: WSL2（Ubuntu）の中で上の手順をそのまま実行するのを推奨。Docker Desktop を使う場合は WSL2 バックエンドで `docker compose up -d` し、E2E スクリプトも WSL2 内で実行する（未検証）。Windows ネイティブでは Mailpit の Windows 版バイナリを `--mailpit-bin` で指定する（未検証）
