@@ -12,13 +12,15 @@ import glob, json, os, shutil, subprocess, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOOLS = os.path.join(HERE, "..", "tools")
 GENERATED_AT = "2026-10-11 16:30 JST（SAMPLE再生成）"
+INGESTED_AT = "2026-10-11T16:30:00+09:00"
 
 
 def build(dst_ledger, out_dir, png=True):
     env = dict(os.environ, HITOBASHIRA_BOT_LOCAL="yourbot", HITOBASHIRA_BOT_DOMAIN="example.com")
     shutil.copyfile(os.path.join(HERE, "sample_base.json"), dst_ledger)
     for m in sorted(glob.glob(os.path.join(HERE, "sample_mails", "m*.json"))):
-        subprocess.run([sys.executable, os.path.join(TOOLS, "ingest_email.py"), m, "--ledger", dst_ledger],
+        subprocess.run([sys.executable, os.path.join(TOOLS, "ingest_email.py"), m, "--ledger", dst_ledger,
+                        "--ingested-at", INGESTED_AT],
                        check=True, env=env, stdout=subprocess.DEVNULL)
     args = [sys.executable, os.path.join(TOOLS, "report.py"), "--ledger", dst_ledger, "--out", out_dir,
             "--generated-at", GENERATED_AT] + ([] if png else ["--no-png"])

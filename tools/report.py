@@ -13,6 +13,8 @@ from common import (NA, PENDING, UNKNOWN_TYPES, JST, LedgerError, load_ledger, f
                     tag_of, emails_of, md_cell, oneline, url_domain, warn)
 
 ZERO = "なし（0件）"
+ATTR_LABEL = {"trusted": "認証済み", "verified": "ドメイン一致（旧形式）", "domain_only": "ドメイン一致のみ（認証なし）",
+              "unverified": "未確認", "unchecked": "照合なし"}
 
 
 def slug(s):
@@ -61,9 +63,13 @@ def metrics(svc):
                      + (f"・不明{unk}" if unk else "") + "）")
         lu = sum(1 for e in emails if e.get("has_list_unsubscribe"))
         m["lu"] = f"{lu}/{len(emails)}通"
-        unv = sum(1 for e in emails if e.get("attribution") == "unverified")
-        m["attr"] = f"{unv}通が帰属未確認（差出人ドメイン不一致）" if unv else (
-            "全通で差出人ドメイン一致" if all(e.get("attribution") == "verified" for e in emails) else "差出人ドメインの照合先なし（未確認）")
+        ac = {k: sum(1 for e in emails if e.get("attribution") == k)
+              for k in ("trusted", "verified", "domain_only", "unverified", "unchecked")}
+        other = len(emails) - sum(ac.values())
+        parts = [f"{ATTR_LABEL[k]}{n}" for k, n in ac.items() if n]
+        if other:
+            parts.append(f"記録なし{other}")
+        m["attr"] = "・".join(parts) + "（通）"
     elif emails == [] and parse_dt(ou):
         m["mail"] = f"0通（{fmt_jst(ou)} まで観測）"
         m["lu"] = m["attr"] = "—"
@@ -86,7 +92,7 @@ def metrics(svc):
     elif v["status"] == "pending":
         m["verdict"] = "配信停止: " + PENDING
     elif v["status"] == "effective":
-        m["verdict"] = "配信停止: 効いた（停止後 販促0通）"
+        m["verdict"] = "配信停止: 観測期間内に停止後の販促を検出せず"
     else:
         m["verdict"] = f"配信停止: 効かず（停止後 販促{v['after']}通）"
     m["verdict_reason"] = v["reason"]
@@ -118,12 +124,12 @@ def render_md(svc, m, sample, generated_at):
           f"| 最初のメールまで | {c(m['first'])} |",
           f"| 期間 | {c(m['span'])} |",
           f"| List-Unsubscribe ヘッダ付き | {c(m['lu'])} |",
-          f"| 帰属（差出人ドメイン照合） | {c(m['attr'])} |",
+          f"| 帰属（ドメイン照合＋認証結果） | {c(m['attr'])} |",
           f"| 配信停止URL（未アクセス・ドメインのみ） | {c(url_domain(uurl)) if uurl else NA} |", ""]
     emails = emails_of(svc) or []
     if emails:
         L += ["| 受信日時 | 差出人 | 件名 | 分類 | List-Unsub | 帰属 |", "|---|---|---|---|---|---|"]
-        attr = {"verified": "一致", "unverified": "未確認", "unchecked": "照合なし"}
+        attr = ATTR_LABEL
         for e in emails:
             L.append(f"| {c(fmt_jst(e.get('received_at')) or NA)} | {c(e.get('from') or NA)} | {c(e.get('subject'))} | "
                      f"{c(e.get('type') or NA)} | {'あり' if e.get('has_list_unsubscribe') else 'なし'} | "
@@ -135,8 +141,10 @@ def render_md(svc, m, sample, generated_at):
           f"- 配信停止操作: {c(m['unsub'])}",
           f"- 停止後に届いた販促メール: {c(m['after'])}",
           f"- 判定: **{c(m['verdict'])}**（{c(m['verdict_reason'])}）",
-          "- 判定は販促メール（分類 marketing）だけで行う。受信時刻が不明なメールが1通でもある場合、"
-          "配信停止時刻が日付だけ・TZ不明の場合、観測期限が無い場合は「判定保留」。", ""]
+          "- 判定は販促メール（分類 marketing）のうち、帰属が「認証済み」のものだけで行う。受信時刻が不明なメールが1通でもある場合、"
+          "配信停止時刻が日付だけ・TZ不明の場合、観測期限が無い場合、停止後に分類不明のメールがある場合、"
+          "帰属を確定できないメールしかない場合は「判定保留」。",
+          "- 「検出せず」は観測期間内の結果で、恒久的な停止成功を示さない。", ""]
     notes = svc.get("notes")
     if isinstance(notes, str):
         notes = [notes]
@@ -148,7 +156,8 @@ def render_md(svc, m, sample, generated_at):
     L += ["## スクリーンショット", ""] + ([f"- {c(s)}" for s in shots] if shots else [NA]) + [""]
     L += ["## 検証の条件と限界", "",
           "- 数値は台帳（ledger.json）の記録だけから集計した。台帳に無い項目は「未観測」。",
-          "- 帰属は +タグと差出人ドメイン（expected_sender_domains）で判断した。送信ドメイン認証（SPF/DKIM/DMARC）の結果は照合していない。",
+          "- 帰属は +タグ・差出人ドメイン（expected_sender_domains）・受信基盤が付けた Authentication-Results の解釈で判断した。"
+          "SPF/DKIM/DMARC の検証そのもの（DNS 参照・署名検証）はしていない。任意入力の認証ヘッダは信用しない。",
           "- メールの分類は件名のキーワードによる推定で、精度は未評価。", ""]
     L += ["---", f"生成: 人柱くん / {c(generated_at)}"]
     return "\n".join(L) + "\n"
@@ -255,7 +264,7 @@ def render_png(svc, m, sample, path, generated_at):
     # 判定
     v = m["verdict"]
     f, v = fit_font(d, v, x1 - x0 - 100, 42, 24); tw = d.textlength(v, font=f)
-    col = (130, 130, 130) if m["verdict_status"] in ("unobserved", "pending") else ((30, 110, 50) if "効いた" in v else (180, 20, 20))
+    col = (130, 130, 130) if m["verdict_status"] in ("unobserved", "pending") else ((30, 110, 50) if m["verdict_status"] == "effective" else (180, 20, 20))
     d.rounded_rectangle([(W - tw) / 2 - 24, y + 8, (W + tw) / 2 + 24, y + 70], 12, outline=col, width=4)
     d.text(((W - tw) / 2, y + 14), v, font=f, fill=col)
     foot = f"人柱くん　{oneline(generated_at)}"  # タグ付きアドレスは出さない

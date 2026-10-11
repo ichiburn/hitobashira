@@ -15,6 +15,11 @@
   - 台帳に無いタグは _quarantine（隔離）に入れる。新しいサービス枠は自動で作らない。
   - タグが無いメールは _untagged に入れる。
   - services[].expected_sender_domains があれば差出人ドメインを照合し、不一致なら attribution="unverified"（帰属未確認）。
+  - 一致しても、それだけでは attribution="domain_only"（From は偽装できる）。"trusted" になるのは、
+    受信基盤から直接取り出した Authentication-Results（信頼リストの authserv-id、一番上のヘッダ）が pass の場合か、
+    自己所有の閉じたローカル環境だとアダプタ（tools/mail_adapters.py）が保証した場合だけ。
+  - この CLI に渡す JSON は任意入力なので、中の Authentication-Results は解釈して記録するが信用しない。
+  - 取り込んだサービス枠には evidence_policy="strict" を付ける（受信経路の稼働確認が無ければ「検出せず」と言わない）。
 
 使い方:
   python3 ingest_email.py mail.json [--ledger ledger.json] [--create-ledger]
@@ -22,9 +27,11 @@
 終了コード: 0=追記/重複スキップ, 2=入力・台帳の不備
 """
 import argparse, json, re, sys
+from datetime import datetime
 from common import (SERVICE_TEMPLATE, UNKNOWN_TYPES, LedgerError, extract_tag, tag_of, env_configured,
                     load_ledger, save_ledger, emails_after_unsub, parse_dt_ex, to_utc_iso, sort_key_utc,
-                    check_attribution, oneline, warn)
+                    attribute, sender_domain, oneline, warn, JST)
+import auth_results
 
 QUARANTINE = "_quarantine"
 UNTAGGED = "_untagged"
@@ -97,8 +104,23 @@ def is_duplicate(entry, emails):
                for e in emails)
 
 
-def ingest(msg, ledger):
-    """msg を ledger に追記する。戻り値 (結果dict, 追記したか)。"""
+def ar_headers_of(msg):
+    """入力 JSON の headers から Authentication-Results を上から順に取り出す（値は文字列か配列）。"""
+    h = msg.get("headers") or {}
+    out = []
+    if isinstance(h, dict):
+        for k, v in h.items():
+            if str(k).lower() == "authentication-results":
+                out += [str(x) for x in (v if isinstance(v, list) else [v])]
+    return out
+
+
+def ingest(msg, ledger, evidence=None, ingested_at=None):
+    """msg を ledger に追記する。戻り値 (結果dict, 追記したか)。
+    evidence はアダプタ（受信基盤から直接取得したコード）だけが渡す dict:
+      {"source": "mailpit_api" など, "trusted_source": bool, "trusted_authserv_ids": [...],
+       "closed_env": bool, "fetched_at": TZ付き時刻, "ref": 受信基盤内のID}
+    evidence が無い（CLI・任意入力 JSON）場合、認証ヘッダは信用しない。"""
     if not isinstance(msg, dict):
         raise LedgerError("入力JSONはオブジェクトである必要があります")
     to = msg.get("to") or ""
@@ -134,7 +156,23 @@ def ingest(msg, ledger):
         "has_list_unsubscribe": lu,
         # "header" = List-Unsubscribe ヘッダで判定 / "body_link" = ヘッダが取れず本文の配信停止リンク有無で代替
         "lu_source": msg.get("lu_source") or ("header" if ("headers" in msg or "has_list_unsubscribe" in msg) else None),
-        "attribution": "unverified" if bucket else check_attribution(svc, msg.get("from")),
+    }
+    ev = evidence or {}
+    auth = auth_results.evaluate(ar_headers_of(msg), sender_domain(msg.get("from")),
+                                 ev.get("trusted_authserv_ids") or (), bool(ev.get("trusted_source")))
+    if bucket:
+        entry["attribution"], basis = "unverified", "台帳のタグと一致しない（隔離）"
+    else:
+        entry["attribution"], basis = attribute(svc, msg.get("from"), auth, closed_env=bool(ev.get("closed_env")))
+    entry["provenance"] = {
+        "source": oneline(ev.get("source") or "input_json")[:50],
+        "ref": oneline(ev.get("ref"))[:100] or None,
+        "fetched_at": ev.get("fetched_at"),
+        "ingested_at": ingested_at or datetime.now(JST).isoformat(timespec="seconds"),
+        "received_at_source": oneline(ev.get("received_at_source") or "input_json.received_at")[:80],
+        "auth": {k: auth[k] for k in ("status", "trusted", "authserv_id", "spf", "dkim", "dmarc", "basis")},
+        "attribution_basis": basis,
+        "type_basis": "input_json.type" if msg.get("type") in UNKNOWN_TYPES else "subject_keyword_estimate",
     }
     _, st = parse_dt_ex(entry["received_at"])
     if st != "ok":
@@ -143,7 +181,9 @@ def ingest(msg, ledger):
     if bucket == QUARANTINE:
         entry["quarantine_tag"] = tag
     if entry["attribution"] == "unverified" and not bucket:
-        warn("差出人ドメインが expected_sender_domains と一致しません。帰属を「未確認」にしました")
+        warn("差出人ドメインが不一致、または認証結果が fail です。帰属を「未確認」にしました")
+    if entry["attribution"] == "domain_only":
+        warn("差出人ドメインは一致しましたが、信頼できる認証結果がありません（domain_only: 停止失敗の確定根拠にしません）")
     if msg.get("message_id"):
         entry["message_id"] = oneline(msg["message_id"])[:300]
     if msg.get("thread_id"):
@@ -164,6 +204,7 @@ def ingest(msg, ledger):
     svc["emails"].append(entry)
     svc["emails"].sort(key=sort_key_utc)
     if not bucket:
+        svc.setdefault("evidence_policy", "strict")
         svc["emails_after_unsubscribe"] = emails_after_unsub(svc)
     return {"service": svc["service"], "bucket": bucket, "type": entry["type"],
             "attribution": entry["attribution"], "emails_total": len(svc["emails"]),
@@ -175,6 +216,7 @@ def main(argv=None):
     ap.add_argument("input", nargs="?", default="-")
     ap.add_argument("--ledger", default="ledger.json")
     ap.add_argument("--create-ledger", action="store_true", help="台帳が無ければ新規作成する")
+    ap.add_argument("--ingested-at", default=None, help="provenance.ingested_at を固定する（再現用）")
     a = ap.parse_args(argv)
     if not env_configured():
         warn("HITOBASHIRA_BOT_LOCAL / HITOBASHIRA_BOT_DOMAIN が未設定です。例示用の yourbot@example.com で照合します")
@@ -182,7 +224,7 @@ def main(argv=None):
         raw = sys.stdin.read() if a.input == "-" else open(a.input, encoding="utf-8").read()
         msg = json.loads(raw)
         ledger = load_ledger(a.ledger, create=a.create_ledger)
-        res, added = ingest(msg, ledger)
+        res, added = ingest(msg, ledger, ingested_at=a.ingested_at)
     except (OSError, ValueError, LedgerError) as ex:
         print(f"[error] {ex}", file=sys.stderr)
         return 2

@@ -63,8 +63,9 @@ def sender_domain(from_field):
 
 
 def check_attribution(svc, from_field):
-    """台帳の expected_sender_domains と差出人ドメインを照合する。
-    戻り値: "verified"（一致） / "unverified"（不一致・差出人不明＝帰属未確認） / "unchecked"（照合先なし）"""
+    """台帳の expected_sender_domains と差出人ドメインを照合する（ドメインの文字列照合だけ）。
+    戻り値: "verified"（一致） / "unverified"（不一致・差出人不明＝帰属未確認） / "unchecked"（照合先なし）
+    ※ From のドメイン一致は本人性の証明ではない。帰属の最終判定は attribute() を使う。"""
     doms = [str(d).strip().lower().strip(".") for d in (svc.get("expected_sender_domains") or []) if str(d).strip()]
     if not doms:
         return "unchecked"
@@ -72,6 +73,36 @@ def check_attribution(svc, from_field):
     if sd and any(sd == d or sd.endswith("." + d) for d in doms):
         return "verified"
     return "unverified"
+
+
+# 帰属の状態（ledger の emails[].attribution）
+#   trusted     … 差出人ドメインが一致し、かつ信頼できる受信基盤の認証結果が pass（または自己所有の閉じた環境で送信元が既知）
+#   domain_only … 差出人ドメインは一致したが、信頼できる認証結果がない（From は偽装できるので確定根拠にしない）
+#   unverified  … 差出人ドメイン不一致、差出人不明、または信頼できる認証結果が fail
+#   unchecked   … 照合先（expected_sender_domains）が無い
+#   verified    … 旧形式（#2 以前の ingest が書いた値）。互換のため残す。新しい ingest は書かない
+COUNTED_ATTRIBUTIONS = ("trusted", "verified")
+
+
+def attribute(svc, from_field, auth=None, closed_env=False):
+    """帰属を根拠付きで決める。auth は auth_results.evaluate() の戻り値（信頼できない場合は status=none）。
+    closed_env=True は「自分で起動したローカル受信箱に、自分で起動したテストサイトだけが送る」構成を
+    呼び出し側（アダプタ）が保証した場合だけ。送信ドメイン認証の代わりではない。
+    戻り値: (attribution, basis)"""
+    dom = check_attribution(svc, from_field)
+    if dom == "unchecked":
+        return "unchecked", "照合先（expected_sender_domains）なし"
+    if dom == "unverified":
+        return "unverified", "差出人ドメインが照合先と不一致"
+    st = (auth or {}).get("status", "none")
+    if (auth or {}).get("trusted") and st == "fail":
+        return "unverified", "信頼できる認証結果が fail: " + str((auth or {}).get("basis"))
+    if (auth or {}).get("trusted") and st == "pass":
+        return "trusted", str(auth.get("basis"))
+    if closed_env:
+        return "trusted", "自己所有の閉じたローカル環境（送信元はテストサイトのみ。SPF/DKIM/DMARC の検証ではない）"
+    return "domain_only", "差出人ドメインは一致。信頼できる認証結果なし" + (
+        f"（{auth.get('basis')}）" if auth and auth.get("basis") else "")
 
 
 # ---------- 時刻 ----------
@@ -174,14 +205,35 @@ def emails_of(svc):
 
 
 # ---------- 配信停止の判定 ----------
+def receiver_ok(svc):
+    """受信経路が観測期限まで動いていたことの記録（receiver_checks）を確認する。
+    receiver_checks: [{"at": TZ付き時刻, "kind": "canary" など, "ok": true}]
+    停止時刻以前と observed_until 以降の両方に ok の確認があれば True。"""
+    checks = svc.get("receiver_checks")
+    if not isinstance(checks, list):
+        return False, "受信経路の稼働確認（receiver_checks）なし"
+    u, ou = parse_dt(svc.get("unsubscribed_at")), parse_dt(svc.get("observed_until"))
+    oks = [parse_dt(c.get("at")) for c in checks if isinstance(c, dict) and c.get("ok") is True]
+    oks = [t for t in oks if t]
+    if any(not (isinstance(c, dict) and c.get("ok") is True) for c in checks):
+        return False, "受信経路の稼働確認に失敗が含まれる"
+    if not (u and ou and any(t <= u for t in oks) and any(t >= ou for t in oks)):
+        return False, "停止前と観測期限後の両方で受信経路を確認できていない"
+    return True, "停止前と観測期限後に受信経路の稼働を確認"
+
+
 def unsub_verdict(svc):
-    """配信停止が効いたかを、販促メール（type=marketing）だけで判定する。
+    """配信停止が効いたかを、販促メール（type=marketing）だけで判定する（fail-closed）。
     戻り値 dict: status = unobserved | pending | effective | ineffective, after = 通数 or None, reason
     - unsubscribed_at が無い → unobserved（未観測）
-    - unsubscribed_at が日付だけ・TZ不明・解釈不能 → pending（判定保留。日付だけの場合は「その日の終わり」とはみなさない）
+    - unsubscribed_at が日付だけ・TZ不明・解釈不能 → pending（日付だけの場合は「その日の終わり」とはみなさない）
     - observed_until が無い、または停止時刻以前 → pending（停止後を観測していない）
     - 受信時刻が不明（欠損・TZ不明・解釈不能）なメールが1通でもある → pending
-    - 停止後の販促メールのうち、差出人ドメインが不一致（帰属未確認）のものがある → 数えず、0通なら pending
+    - 停止後の販促メールは帰属が trusted（旧形式 verified を含む）のものだけ数える。
+      domain_only / unchecked / unverified は「効かず」の確定根拠にしない（それだけなら pending）
+    - 停止後に分類 other・不明のメールがある場合、0通とは断定しない（pending）
+    - effective は「観測期間内に停止後の販促メールを検出せず」の意味で、恒久的な停止成功を示さない。
+      evidence_policy=strict の台帳では、受信経路の稼働確認（receiver_checks）が無ければ pending
     """
     u_raw = svc.get("unsubscribed_at")
     u, ust = parse_dt_ex(u_raw)
@@ -201,15 +253,28 @@ def unsub_verdict(svc):
     bad = [e for e in emails if parse_dt(e.get("received_at")) is None]
     if bad:
         return {"status": "pending", "after": None, "reason": f"受信時刻が不明なメールが{len(bad)}通ある"}
-    promo_after = [e for e in emails if e.get("type") == "marketing" and parse_dt(e["received_at"]) > u]
-    counted = [e for e in promo_after if e.get("attribution") != "unverified"]
+    after = [e for e in emails if parse_dt(e["received_at"]) > u]
+    promo_after = [e for e in after if e.get("type") == "marketing"]
+    counted = [e for e in promo_after if e.get("attribution") in COUNTED_ATTRIBUTIONS]
     excluded = len(promo_after) - len(counted)
+    legacy = sum(1 for e in counted if e.get("attribution") == "verified")
     if counted:
         return {"status": "ineffective", "after": len(counted), "reason": f"停止後に販促メール{len(counted)}通"
-                + (f"（帰属未確認{excluded}通は除外）" if excluded else "")}
+                + (f"（帰属を確定できない{excluded}通は除外）" if excluded else "")
+                + (f"（うち{legacy}通は旧形式の帰属 verified: 認証結果の記録なし）" if legacy else "")}
     if excluded:
-        return {"status": "pending", "after": None, "reason": f"停止後の販促メールは帰属未確認の{excluded}通のみ"}
-    return {"status": "effective", "after": 0, "reason": f"{fmt_jst(svc.get('observed_until'))} まで販促0通"}
+        return {"status": "pending", "after": None,
+                "reason": f"停止後の販促メールは帰属を確定できない{excluded}通のみ（domain_only / unchecked / unverified）"}
+    unclear = [e for e in after if e.get("type") not in ("marketing", "transactional")]
+    if unclear:
+        return {"status": "pending", "after": None, "reason": f"停止後に分類が other・不明のメールが{len(unclear)}通ある"}
+    if svc.get("evidence_policy") == "strict":
+        ok, why = receiver_ok(svc)
+        if not ok:
+            return {"status": "pending", "after": None, "reason": why}
+    return {"status": "effective", "after": 0,
+            "reason": f"{fmt_jst(svc.get('observed_until'))} までの観測期間内に、停止後の販促メールを検出せず"
+                      "（恒久的な停止成功を示すものではない）"}
 
 
 def emails_after_unsub(svc):

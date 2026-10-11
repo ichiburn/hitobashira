@@ -15,9 +15,16 @@
 > - `testsite/server.py`: `GET /` と `POST /submit` だけにし、記録に空欄フィールド・アクセス元・User-Agent を追加
 > - SKILL.md: 送信してよい範囲を「自分が所有する 127.0.0.1 上のテスト環境のみ」に限定
 >
+> **issue #2（fail-closed）で直したもの**（再現テストは `tests/test_fail_closed.py`）
+> - 帰属を根拠付きの状態に分けた: `trusted`（ドメイン一致＋信頼できる認証結果 pass）/ `domain_only`（From のドメイン一致だけ）/ `unverified` / `unchecked`。From の一致だけでは `trusted` にしない
+> - `tools/auth_results.py`: Authentication-Results の解釈。信用するのは、アダプタが受信基盤から直接取り出した**一番上**のヘッダで、authserv-id が信頼リストにあるものだけ。任意入力 JSON（`ingest_email.py` の CLI）の認証ヘッダは記録するが信用しない
+> - 配信停止の判定: `trusted` の販促メールだけを「効かず」の根拠にする（`domain_only` / `unchecked` / `unverified` だけなら判定保留）。停止後に分類不明のメールがあれば保留。0通は「観測期間内に検出せず」と書き、恒久的な成功とは言わない。`evidence_policy: strict` の台帳では受信経路の稼働確認（`receiver_checks`）が無ければ保留
+> - 証拠ごとの provenance（取得元・取得時刻・受信時刻の出所・認証状態・帰属の根拠・分類の根拠）を保存
+> - 互換: #2 以前の台帳にある `attribution: "verified"` は旧形式として数える（報告書に「旧形式」と出す）。新しい ingest は書かない
+>
 > **残っているもの**
 > - 実際の受信メールでの動作・分類精度は未評価（SAMPLE とテストのみ）
-> - 帰属の照合は差出人ドメインだけで、送信ドメイン認証（SPF/DKIM/DMARC、Authentication-Results）は見ていない。差出人の詐称は防げない
+> - 帰属: issue #2 で fail-closed にした（下記）。ただし Authentication-Results は**ヘッダの解釈だけ**で、SPF/DKIM/DMARC の検証そのもの（DNS 参照・署名検証）はしていない。信頼できるのは受信基盤が付けたヘッダだけで、その受信基盤のアダプタは Mailpit（ローカル再現用、認証ヘッダを付けない）しか無い。実際の受信メールでは未検証
 > - 分類は件名キーワードによる推定のまま
 > - SKILL.md の送信範囲は手順上の約束で、接続先を技術的に制限する仕組みはない
 > - `testsite3/server3.py` はレビュー対象外で、今回は変更していない
